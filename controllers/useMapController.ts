@@ -70,7 +70,7 @@ export function useMapController() {
           });
 
           const marker = new maplibregl.Marker({ element: el })
-            .setLngLat([lugar.lat, lugar.long]) // <-- Mantén aquí la corrección que hicimos antes
+            .setLngLat([lugar.long, lugar.lat]) // <-- Mantén aquí la corrección que hicimos antes
             .addTo(map);
             
           markersRef.current.push(marker);
