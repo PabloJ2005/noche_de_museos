@@ -1,112 +1,123 @@
+// Map.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-
-const MAP_STYLES = {
-  Streets:
-    "https://tiles.versatiles.org/assets/styles/colorful/style.json",
-
-  Minimal:
-    "https://tiles.openfreemap.org/styles/positron",
-
-  Dark:
-    "https://tiles.openfreemap.org/styles/fiord",
-};
+import { MAP_STYLES, MapStyleKey } from "../models/map";
+import { useMapController } from "../controllers/useMapController";
 
 export default function Map() {
-  const mapContainer = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-
-  const [selectedStyle, setSelectedStyle] =
-    useState<keyof typeof MAP_STYLES>("Streets");
-
-  // Crear mapa
-  useEffect(() => {
-    if (!mapContainer.current || mapRef.current) return;
-
-    const map = new maplibregl.Map({
-      container: mapContainer.current,
-      style: MAP_STYLES[selectedStyle],
-      center: [-68.15, -16.5],
-      zoom: 13,
-    });
-    map.addControl(
-    new maplibregl.GeolocateControl({
-      positionOptions: {
-        enableHighAccuracy: true,
-      },
-
-      trackUserLocation: true,
-    }),
-    "top-right"
-  );
-
-    // Controles de zoom
-    map.addControl(
-      new maplibregl.NavigationControl(),
-      "top-right"
-    );
-
-
-    mapRef.current = map;
-
-    return () => {
-      map.remove();
-    };
-  }, []);
-
-  // Cambiar estilo dinámicamente
-  useEffect(() => {
-    if (!mapRef.current) return;
-
-    mapRef.current.setStyle(MAP_STYLES[selectedStyle]);
-  }, [selectedStyle]);
+  const { 
+    mapContainer, 
+    selectedStyle, 
+    setSelectedStyle,
+    isFormOpen,      // <-- Importamos
+    setIsFormOpen,   // <-- Importamos
+    selectedCoords   // <-- Importamos
+  } = useMapController();
 
   return (
-    <div style={{ position: "relative" }}>
-      {/* Menu desplegable */}
-      <div
-        style={{
-          position: "absolute",
-          top: 10,
-          left: 10,
-          zIndex: 10,
-          background: "white",
-          padding: "8px",
-          borderRadius: "8px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-        }}
-      >
+    // Es importante que el overflow sea "hidden" aquí para que el formulario se oculte bien al bajar
+    <div style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden" }}>
+      
+      {/* Menu desplegable de estilos (se queda igual) */}
+      <div style={{ position: "absolute", top: 10, left: 10, zIndex: 10, background: "white", padding: "8px", borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
         <select
           value={selectedStyle}
-          onChange={(e) =>
-            setSelectedStyle(
-              e.target.value as keyof typeof MAP_STYLES
-            )
-          }
-          style={{
-            padding: "6px",
-            borderRadius: "6px",
-          }}
+          onChange={(e) => setSelectedStyle(e.target.value as MapStyleKey)}
+          style={{ padding: "6px", borderRadius: "6px" }}
         >
           {Object.keys(MAP_STYLES).map((style) => (
-            <option key={style} value={style}>
-              {style}
-            </option>
+            <option key={style} value={style}>{style}</option>
           ))}
         </select>
       </div>
 
-      {/* Mapa */}
+      {/* Contenedor del Mapa */}
+      <div ref={mapContainer} style={{ width: "100%", height: "100%" }} />
+
+      {/* FORMULARIO DESLIZANTE (Bottom Sheet) */}
       <div
-        ref={mapContainer}
         style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
           width: "100%",
-          height: "100vh",
+          backgroundColor: "white",
+          // La magia está aquí: Si isFormOpen es true, sube a la posición 0. Si es false, se esconde al 100% hacia abajo
+          transform: isFormOpen ? "translateY(0)" : "translateY(100%)",
+          transition: "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)", // Transición suave tipo Android
+          borderTopLeftRadius: "24px",
+          borderTopRightRadius: "24px",
+          boxShadow: "0 -4px 20px rgba(0,0,0,0.15)",
+          zIndex: 20,
+          padding: "24px",
+          maxHeight: "80vh",
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px"
         }}
-      />
+      >
+        {/* Encabezado del panel */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+          <h2 style={{ margin: 0, fontSize: "1.2rem", color: "#333" }}>Añadir Lugar</h2>
+          <button 
+            onClick={() => setIsFormOpen(false)}
+            style={{ background: "none", border: "none", fontSize: "1.5rem", fontWeight: "bold", color: "#888", cursor: "pointer" }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Coordenadas capturadas (Solo lectura) */}
+        {selectedCoords && (
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "#666" }}>
+            Lat: {selectedCoords.lat.toFixed(5)}, Long: {selectedCoords.long.toFixed(5)}
+          </p>
+        )}
+
+        {/* Campos del Formulario */}
+        <form style={{ display: "flex", flexDirection: "column", gap: "12px" }} onSubmit={(e) => e.preventDefault()}>
+          <input type="text" placeholder="Nombre del lugar" style={inputStyle} required />
+          
+          <select style={inputStyle} required defaultValue="">
+            <option value="" disabled>Selecciona una categoría</option>
+            <option value="1">Comida</option>
+            <option value="2">Teatro</option>
+            <option value="3">Música</option>
+          </select>
+
+          <div style={{ display: "flex", gap: "10px" }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: "0.8rem", color: "#666" }}>Hora de Inicio</label>
+              <input type="time" style={inputStyle} required />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: "0.8rem", color: "#666" }}>Hora de Fin</label>
+              <input type="time" style={inputStyle} required />
+            </div>
+          </div>
+
+          <textarea placeholder="Notas u observaciones..." rows={3} style={{ ...inputStyle, resize: "none" }} />
+
+          <button 
+            type="submit" 
+            style={{ background: "#2563EB", color: "white", padding: "12px", borderRadius: "8px", border: "none", fontWeight: "bold", marginTop: "10px", cursor: "pointer" }}
+          >
+            Guardar Lugar
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
+
+// Un pequeño estilo reutilizable para los inputs
+const inputStyle = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: "8px",
+  border: "1px solid #ccc",
+  fontSize: "1rem",
+  boxSizing: "border-box" as const,
+};
