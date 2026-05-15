@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const {id_categoria, id_localizacion, nombre} = body
+    const {id_categoria, id_localizacion, nombre, hora_inicio, hora_fin, notas} = body
 
     if (!id_localizacion || !id_localizacion || !nombre) {
       return NextResponse.json(
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
       `INSERT INTO lugar (id_categoria, id_localizacion, nombre, hora_inicio, hora_fin, notas)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [id_categoria, id_localizacion, nombre]
+      [id_categoria, id_localizacion, nombre, hora_inicio, hora_fin, notas]
     )
 
     return NextResponse.json({
@@ -43,7 +43,8 @@ export async function GET() {
         c.categoria AS nombre_categoria, 
         c.color AS color_categoria,
         loc.lat, 
-        loc.long 
+        loc.long,
+        loc.id AS id_localizacion
     FROM lugar l
     LEFT JOIN categoria_lugar c ON l.id_categoria = c.id
     LEFT JOIN localizacion loc ON l.id_localizacion = loc.id

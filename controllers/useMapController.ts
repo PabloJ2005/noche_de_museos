@@ -1,7 +1,7 @@
 // useMapController.ts
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
-import { MAP_STYLES, MapStyleKey, INITIAL_MAP_CONFIG, agruparLugares } from "../models/map";
+import { MAP_STYLES, MapStyleKey, INITIAL_MAP_CONFIG, agruparLugares, LugarAgrupado, Categoria } from "../models/map";
 
 export function useMapController() {
   const mapContainer = useRef<HTMLDivElement | null>(null);
@@ -10,9 +10,31 @@ export function useMapController() {
 
   const [selectedStyle, setSelectedStyle] = useState<MapStyleKey>("Streets");
   
-  // NUEVOS ESTADOS PARA EL FORMULARIO
+  // ESTADOS DEL FORMULARIO DE "AÑADIR LUGAR"
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedCoords, setSelectedCoords] = useState<{ lat: number; long: number } | null>(null);
+  const [formLocationId, setFormLocationId] = useState<number | null>(null); // Null si es nuevo, Número si ya existe
+
+  // ESTADOS DEL PANEL DE "VER LOCALIZACIÓN"
+  const [isLocationViewOpen, setIsLocationViewOpen] = useState(false);
+  const [selectedLocationData, setSelectedLocationData] = useState<LugarAgrupado | null>(null);
+
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+
+  useEffect(() => {
+    async function cargarCategorias() {
+      try {
+        const response = await fetch('/api/categoria');
+        if (response.ok) {
+          const json = await response.json();
+          setCategorias(json.data || []);
+        }
+      } catch (error) {
+        console.error("Error al cargar categorías:", error);
+      }
+    }
+    cargarCategorias();
+  }, []);
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
@@ -58,19 +80,22 @@ export function useMapController() {
           el.style.color = 'white';
           el.style.fontWeight = 'bold';
           el.style.fontSize = '12px';
+          el.style.cursor = 'pointer';
 
           if (lugar.count > 1) {
             el.innerText = lugar.count.toString();
           }
 
-          // EVITAR QUE AL TOCAR UNA BURBUJA SE ABRA EL FORMULARIO DEL MAPA
+          // EVENTO CLICK DEL MARCADOR: Abre el panel de Ver Localización
           el.addEventListener('click', (e) => {
             e.stopPropagation(); 
-            // Aquí en el futuro podrías abrir un modal para ver los detalles del lugar
+            setSelectedLocationData(lugar); // Cargamos los datos
+            setIsFormOpen(false); // Cerramos el otro panel si estaba abierto
+            setIsLocationViewOpen(true); // Abrimos este panel
           });
 
           const marker = new maplibregl.Marker({ element: el })
-            .setLngLat([lugar.long, lugar.lat]) // <-- Mantén aquí la corrección que hicimos antes
+            .setLngLat([lugar.long, lugar.lat]) // <-- CUIDADO AQUI (Asegurate que se mantenga correcto según tu BD)
             .addTo(map);
             
           markersRef.current.push(marker);
@@ -81,13 +106,13 @@ export function useMapController() {
       }
     });
 
-    // EVENTO CLICK DEL MAPA (Solo funciona si es un toque rápido, ignora drags)
+    // EVENTO CLICK DEL MAPA: Abre el formulario para una NUEVA localización
     map.on('click', (e) => {
-      // Obtenemos lat y long del punto exacto donde se tocó
-      const { lat, lng } = e.lngLat;
-      
-      setSelectedCoords({ lat: lat, long: lng });
-      setIsFormOpen(true); // Abrimos el formulario deslizante
+      setIsLocationViewOpen(false); // Cerramos el panel de Ver Localización
+      setFormLocationId(null); // Reiniciamos el ID a null (porque es nuevo)
+      setSelectedCoords({ lat: e.lngLat.lat, long: e.lngLat.lng });
+      setIsFormOpen(true);
+      setSelectedLocationData(null);
     });
 
     mapRef.current = map;
@@ -103,13 +128,86 @@ export function useMapController() {
     mapRef.current.setStyle(MAP_STYLES[selectedStyle]);
   }, [selectedStyle]);
 
-  // Exportamos los nuevos estados a la vista
+  const handleSubmitLugar = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    // 1. Extraemos todos los datos del formulario usando FormData
+    const formData = new FormData(e.currentTarget);
+    const datosLugar = {
+      nombre: formData.get("nombre") as string,
+      id_categoria: formData.get("id_categoria") as string,
+      hora_inicio: formData.get("hora_inicio") as string,
+      hora_fin: formData.get("hora_fin") as string,
+      notas: formData.get("notas") as string,
+    };
+
+    try {
+      let idLocalizacionFinal = selectedLocationData?.id_localizacion; // Null si no existe
+
+      // 2. Si NO hay ID de localización, pero hay coordenadas, CREAMOS la localización primero
+      if (!idLocalizacionFinal && selectedCoords) {
+        // Asumiendo que tienes un POST en /api/localizacion
+        const resLocalizacion = await fetch('/api/localizacion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lat: selectedCoords.lat.toString(),
+            long: selectedCoords.long.toString()
+          })
+        });
+
+        if (!resLocalizacion.ok) throw new Error("Error al crear la localización");
+        
+        const dataLocalizacion = await resLocalizacion.json();
+        idLocalizacionFinal = dataLocalizacion.data.id; // Asegúrate de que tu API devuelve el nuevo ID aquí
+      }
+
+      // 3. Si por alguna razón no pudimos obtener el ID, cancelamos
+      if (!idLocalizacionFinal) throw new Error("No se pudo obtener el ID de la localización");
+
+      // 4. CREAMOS EL LUGAR relacionándolo con la localización
+      const resLugar = await fetch('/api/lugar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...datosLugar,
+          id_localizacion: idLocalizacionFinal // Añadimos el ID que conseguimos
+        })
+      });
+
+      if (!resLugar.ok) throw new Error("Error al crear el lugar");
+
+      // 5. ¡Éxito! Cerramos el formulario, limpiamos memoria y (opcional) recargamos la página
+      setIsFormOpen(false);
+      setSelectedLocationData(null);
+      alert("¡Lugar guardado con éxito!");
+      
+      // La forma más fácil de ver el nuevo lugar es recargar la pantalla
+      // En una app avanzada podrías inyectar el punto directo al mapa sin recargar
+      window.location.reload(); 
+
+    } catch (error) {
+      console.error(error);
+      alert("Hubo un error al guardar los datos.");
+    }
+  };
+
+  // Exportamos los estados
   return {
     mapContainer,
     selectedStyle,
     setSelectedStyle,
+    // Panel Formulario
     isFormOpen,
     setIsFormOpen,
     selectedCoords,
+    formLocationId,
+    // Panel Ver Localización
+    isLocationViewOpen,
+    setIsLocationViewOpen,
+    selectedLocationData,
+    setSelectedLocationData,
+    categorias,
+    handleSubmitLugar
   };
 }

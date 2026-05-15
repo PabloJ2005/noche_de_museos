@@ -15,7 +15,7 @@ export async function POST(req: Request) {
 
     const result = await pool.query(
       `INSERT INTO localizacion (lat, long)
-       VALUES ($1, $2, $3)
+       VALUES ($1, $2)
        RETURNING *`,
       [lat, long]
     )
